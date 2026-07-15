@@ -364,6 +364,47 @@ tbody tr:hover {
   vertical-align: middle;
 }
 
+.pagination-bar {
+  min-height: 62px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 16px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.pagination-controls {
+  display: grid;
+  grid-template-columns: 82px minmax(88px, auto) 82px;
+  align-items: center;
+  gap: 10px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.page-button {
+  height: 36px;
+  border: 1px solid rgba(210, 224, 246, 0.18);
+  border-radius: 6px;
+  background: rgba(7, 20, 38, 0.62);
+  color: var(--ink);
+  cursor: pointer;
+  font-weight: 750;
+}
+
+.page-button:hover:not(:disabled) {
+  border-color: rgba(239, 199, 119, 0.5);
+  color: var(--gold-soft);
+}
+
+.page-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
 @media (max-width: 820px) {
   .shell {
     width: min(100% - 20px, 1120px);
@@ -395,5 +436,14 @@ tbody tr:hover {
 
   .ghost-button {
     width: 100%;
+  }
+
+  .pagination-bar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .pagination-controls {
+    grid-template-columns: 1fr minmax(88px, auto) 1fr;
   }
 }

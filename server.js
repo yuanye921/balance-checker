@@ -6,6 +6,7 @@ const path = require("path");
 const PORT = Number(process.env.PORT || 4173);
 const PUBLIC_DIR = path.join(__dirname, "public");
 const MAX_BODY_BYTES = 64 * 1024;
+const LOG_PAGE_SIZE = 100;
 
 const allowedServers = buildAllowedServers();
 
@@ -48,7 +49,8 @@ const server = http.createServer(async (req, res) => {
         return sendJson(res, 400, { error: "令牌格式看起来不对" });
       }
 
-      const result = await queryRelayBalance(selectedServer.url, apiKey);
+      const page = Math.max(1, Math.floor(Number(body.page) || 1));
+      const result = await queryRelayBalance(selectedServer.url, apiKey, page);
       return sendJson(res, 200, result);
     }
 
@@ -154,7 +156,7 @@ function readJsonBody(req) {
   });
 }
 
-async function queryRelayBalance(baseUrl, apiKey) {
+async function queryRelayBalance(baseUrl, apiKey, page) {
   const now = new Date();
   const start = new Date(now.getTime() - 100 * 24 * 60 * 60 * 1000);
   const startDate = formatDate(start);
@@ -166,16 +168,62 @@ async function queryRelayBalance(baseUrl, apiKey) {
     `/v1/dashboard/billing/usage?start_date=${startDate}&end_date=${endDate}`,
     apiKey
   );
+  let quotaPerUnit = 500000;
+  try {
+    const status = await fetchJson(baseUrl, "/api/status", apiKey);
+    const configuredQuotaPerUnit = Number(status?.data?.quota_per_unit);
+    if (Number.isFinite(configuredQuotaPerUnit) && configuredQuotaPerUnit > 0) {
+      quotaPerUnit = configuredQuotaPerUnit;
+    }
+  } catch {
+    // Keep the standard New API conversion when the public status endpoint is unavailable.
+  }
 
   const hardLimit = Number(subscription.hard_limit_usd ?? subscription.system_hard_limit_usd ?? 0);
   const used = Number(usage.total_usage ?? 0) / 100;
   const warnings = [];
   let logs = [];
+  let pagination = {
+    page,
+    pageSize: LOG_PAGE_SIZE,
+    total: 0,
+    totalPages: 1
+  };
 
   try {
-    const logResponse = await fetchJson(baseUrl, "/api/log/token", apiKey);
-    if (logResponse.success && Array.isArray(logResponse.data)) {
-      logs = logResponse.data.slice().reverse().slice(0, 80).map(normalizeLog);
+    const logResponse = await fetchJson(
+      baseUrl,
+      `/api/log/token?p=${page}&page_size=${LOG_PAGE_SIZE}`,
+      apiKey
+    );
+    if (logResponse.success && Array.isArray(logResponse.data?.items)) {
+      const total = Math.max(0, Number(logResponse.data.total) || 0);
+      const responsePage = Math.max(1, Number(logResponse.data.page) || page);
+      const pageSize = Math.max(1, Number(logResponse.data.page_size) || LOG_PAGE_SIZE);
+      logs = logResponse.data.items
+        .map((log) => normalizeLog(log, quotaPerUnit))
+        .sort((a, b) => b.createdAt - a.createdAt);
+      pagination = {
+        page: responsePage,
+        pageSize,
+        total,
+        totalPages: Math.max(1, Math.ceil(total / pageSize))
+      };
+    } else if (logResponse.success && Array.isArray(logResponse.data)) {
+      const allLogs = logResponse.data
+        .map((log) => normalizeLog(log, quotaPerUnit))
+        .sort((a, b) => b.createdAt - a.createdAt);
+      const startIdx = (page - 1) * LOG_PAGE_SIZE;
+      logs = allLogs.slice(startIdx, startIdx + LOG_PAGE_SIZE);
+      pagination = {
+        page,
+        pageSize: LOG_PAGE_SIZE,
+        total: allLogs.length,
+        totalPages: Math.max(1, Math.ceil(allLogs.length / LOG_PAGE_SIZE))
+      };
+      if (allLogs.length >= 1000) {
+        warnings.push("API 站尚未启用完整日志分页，目前只能翻阅最近 1000 条记录");
+      }
     } else if (logResponse.message) {
       warnings.push(logResponse.message);
     }
@@ -191,6 +239,7 @@ async function queryRelayBalance(baseUrl, apiKey) {
       accessDate: formatAccessDate(subscription.access_until)
     },
     logs,
+    pagination,
     warnings
   };
 }
@@ -242,14 +291,14 @@ function requestText(url, headers) {
   });
 }
 
-function normalizeLog(log) {
+function normalizeLog(log, quotaPerUnit) {
   return {
     createdAt: toUnixSeconds(log.created_at),
     model: String(log.model_name || "-"),
     useTime: Number(log.use_time || 0),
     promptTokens: Number(log.prompt_tokens || 0),
     completionTokens: Number(log.completion_tokens || 0),
-    quota: Number(log.quota || 0),
+    quota: Number(log.quota || 0) / quotaPerUnit,
     content: String(log.content || "")
   };
 }
@@ -292,6 +341,12 @@ function mockBalance() {
         content: "演示请求：知识库入库"
       }
     ],
+    pagination: {
+      page: 1,
+      pageSize: LOG_PAGE_SIZE,
+      total: 3,
+      totalPages: 1
+    },
     warnings: []
   };
 }

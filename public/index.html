@@ -58,7 +58,7 @@
               <p class="panel-kicker">Usage Records</p>
               <h2>调用详情</h2>
             </div>
-            <button class="ghost-button" id="csvButton" type="button" disabled>导出 CSV</button>
+            <button class="ghost-button" id="csvButton" type="button" disabled>导出本页 CSV</button>
           </div>
           <div class="table-wrap">
             <table>
@@ -79,6 +79,14 @@
                 </tr>
               </tbody>
             </table>
+          </div>
+          <div class="pagination-bar" aria-label="调用记录分页">
+            <span id="recordSummary">暂无调用记录</span>
+            <div class="pagination-controls">
+              <button class="page-button" id="previousPageButton" type="button" disabled>上一页</button>
+              <span id="pageSummary">第 1 / 1 页</span>
+              <button class="page-button" id="nextPageButton" type="button" disabled>下一页</button>
+            </div>
           </div>
         </section>
       </section>

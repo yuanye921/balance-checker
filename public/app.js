@@ -7,6 +7,10 @@ const messageBox = document.querySelector("#messageBox");
 const connectionStatus = document.querySelector("#connectionStatus");
 const csvButton = document.querySelector("#csvButton");
 const logsBody = document.querySelector("#logsBody");
+const previousPageButton = document.querySelector("#previousPageButton");
+const nextPageButton = document.querySelector("#nextPageButton");
+const pageSummary = document.querySelector("#pageSummary");
+const recordSummary = document.querySelector("#recordSummary");
 
 const totalValue = document.querySelector("#totalValue");
 const usedValue = document.querySelector("#usedValue");
@@ -15,6 +19,14 @@ const accessValue = document.querySelector("#accessValue");
 
 let currentLogs = [];
 let serverMeta = [];
+let currentPage = 1;
+let currentPagination = {
+  page: 1,
+  pageSize: 100,
+  total: 0,
+  totalPages: 1
+};
+let isLoading = false;
 
 init();
 
@@ -32,6 +44,22 @@ async function init() {
 
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
+  await runQuery(1);
+});
+
+previousPageButton.addEventListener("click", async () => {
+  if (currentPage > 1) {
+    await runQuery(currentPage - 1);
+  }
+});
+
+nextPageButton.addEventListener("click", async () => {
+  if (currentPage < currentPagination.totalPages) {
+    await runQuery(currentPage + 1);
+  }
+});
+
+async function runQuery(page) {
   hideMessage();
 
   const selected = serverMeta.find((item) => item.id === serverSelect.value);
@@ -39,12 +67,12 @@ form.addEventListener("submit", async (event) => {
 
   if (!selected) {
     showMessage("没有可用的接口服务", "error");
-    return;
+    return false;
   }
 
   if (!selected.demo && !apiKey) {
     showMessage("请输入令牌", "warning");
-    return;
+    return false;
   }
 
   setLoading(true);
@@ -56,7 +84,8 @@ form.addEventListener("submit", async (event) => {
       },
       body: JSON.stringify({
         serverId: selected.id,
-        apiKey
+        apiKey,
+        page
       })
     });
     const payload = await response.json();
@@ -65,18 +94,22 @@ form.addEventListener("submit", async (event) => {
     }
     renderBalance(payload.balance);
     renderLogs(payload.logs || []);
+    renderPagination(payload.pagination);
     if (Array.isArray(payload.warnings) && payload.warnings.length > 0) {
       showMessage(payload.warnings.join("；"), "warning");
     } else {
       showMessage("查询完成", "success");
     }
+    return true;
   } catch (error) {
     showMessage(error.message || "查询失败", "error");
     renderLogs([]);
+    renderPagination();
+    return false;
   } finally {
     setLoading(false);
   }
-});
+}
 
 serverSelect.addEventListener("change", updateModeStatus);
 
@@ -135,10 +168,12 @@ function updateModeStatus() {
   }
 }
 
-function setLoading(isLoading) {
+function setLoading(loading) {
+  isLoading = Boolean(loading);
   queryButton.disabled = isLoading;
   buttonLabel.textContent = isLoading ? "查询中" : "查询";
   form.classList.toggle("is-loading", isLoading);
+  updatePaginationControls();
 }
 
 function renderBalance(balance = {}) {
@@ -173,6 +208,24 @@ function renderLogs(logs) {
     `;
     logsBody.append(row);
   }
+}
+
+function renderPagination(pagination = {}) {
+  const pageSize = Math.max(1, Number(pagination.pageSize) || 100);
+  const total = Math.max(0, Number(pagination.total) || 0);
+  const totalPages = Math.max(1, Number(pagination.totalPages) || Math.ceil(total / pageSize));
+  const page = Math.min(totalPages, Math.max(1, Number(pagination.page) || 1));
+
+  currentPage = page;
+  currentPagination = { page, pageSize, total, totalPages };
+  recordSummary.textContent = total > 0 ? `共 ${total} 条记录，每页 ${pageSize} 条` : "暂无调用记录";
+  pageSummary.textContent = `第 ${page} / ${totalPages} 页`;
+  updatePaginationControls();
+}
+
+function updatePaginationControls() {
+  previousPageButton.disabled = isLoading || currentPage <= 1 || currentPagination.total === 0;
+  nextPageButton.disabled = isLoading || currentPage >= currentPagination.totalPages || currentPagination.total === 0;
 }
 
 function showMessage(text, type) {
